@@ -11,3 +11,6 @@ To build this script into workshop acceptable format you must have:
 
 ### Releases
 You can use an pre-built release in <b>Releases</b> tab in this repository.
+
+### Todo
+- [ ] Implement multiple targets in same match.
