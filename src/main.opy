@@ -4,7 +4,8 @@ globalvar cfgGiveUltimateOnKillTarget
 globalvar cfgResetCooldownsOnKillTarget
 globalvar currentTarget
 globalvar currentTargetHudText
-globalvar currentTargetHudIcon	
+globalvar currentTargetHudIcon
+globalvar currentTargetEffect
 
 rule "BountyHunter::ProcessOptions":
     cfgScoreOnKill = createWorkshopSetting(int[1:1000], "Bounty Hunter", "Score per kill", 100, 0)
@@ -13,10 +14,11 @@ rule "BountyHunter::ProcessOptions":
 	cfgResetCooldownsOnKillTarget = createWorkshopSetting(bool, "Bounty Hunter", "Reset abilities cooldown when kill target.", false, 0)
 
 rule "BountyHunter::SetupGameModeOverrides":
-    @Condition isGameInProgress() == true
+    @Condition isGameInProgress()
     disableScoring()
 	
 rule "BountyHunter::SetupDummyForTesting":
+	@Disabled
 	@Event eachPlayer
 	@Condition hostPlayer == eventPlayer
 	@Condition hostPlayer.isHoldingButton(Button.INTERACT)
@@ -31,14 +33,14 @@ rule "BountyHunter::OnPlayerLeft":
 	currentTarget = null
 
 rule "BountyHunter::SetupGameModeUserInterface":
-    @Condition isGameInProgress() == true
+    @Condition isGameInProgress()
     destroyHudText(currentTargetHudText)
     destroyIcon(currentTargetHudIcon)
     wait(0.25)
     
 	#// Create offscren icon to indicate where target was in.
     createIcon([player for player in getAllPlayers() if entityExists(currentTarget) and player != currentTarget],
-		updateEveryTick(currentTarget.getPosition()) + vect(0, 2, 0), Icon.SKULL, IconReeval.VISIBILITY_AND_POSITION, Color.RED, true)
+		updateEveryTick(currentTarget.getPosition()) + vect(0, 2.5, 0), Icon.SKULL, IconReeval.VISIBILITY_AND_POSITION, Color.RED, true)
 		
     currentTargetHudIcon = getLastCreatedEntity()
     wait(0.25)
@@ -49,6 +51,12 @@ rule "BountyHunter::SetupGameModeUserInterface":
 			HudPosition.TOP, 1, Color.ORANGE, HudReeval.VISIBILITY_AND_STRING, SpecVisibility.ALWAYS)
 		
     currentTargetHudText = getLastCreatedText()
+	wait(0.25)
+	
+	createEffect([player for player in getAllPlayers() if entityExists(currentTarget)], Effect.SPARKLES, Color.YELLOW,
+		updateEveryTick(currentTarget.getPosition()), 10, EffectReeval.VISIBILITY_POSITION_AND_RADIUS)
+	
+	currentTargetEffect = getLastCreatedEntity()
 	
 	
 rule "BountyHunter::ProcessHunterScore":
@@ -56,6 +64,7 @@ rule "BountyHunter::ProcessHunterScore":
 	@Condition not entityExists(currentTarget) or attacker != currentTarget
 	@Condition attacker != victim
 	@Condition entityExists(attacker)
+	@Condition isGameInProgress()
 	
 	if not entityExists(currentTarget) or currentTarget == victim:
 		currentTarget = attacker
@@ -73,7 +82,7 @@ rule "BountyHunter::ProcessHunterScore":
 		attacker.setHealth(attacker.getMaxHealth() * 100)
 		
 		#// Workaround to prevent incrementing double of score. Since hunted event is dispatched at same time.
-		attacker.setScore(attacker.getScore() + min(1, (cfgScoreOnKillTarget - cfgScoreOnKill)))
+		attacker.setScore(attacker.getScore() + (cfgScoreOnKillTarget - cfgScoreOnKill))
 		currentTarget = attacker
 	else:
 		attacker.setScore(attacker.getScore() + cfgScoreOnKill)
@@ -82,12 +91,14 @@ rule "BountyHunter::ProcessHuntedKill":
 	@Event playerDied
 	@Condition attacker == currentTarget
 	@Condition entityExists(victim) or victim != null
+	@Condition isGameInProgress()
 	attacker.setScore(attacker.getScore() + cfgScoreOnKill)
 		
 rule "BountyHunter::ProcessHuntedSelfKill":
 	@Event playerDied
 	@Condition victim == currentTarget
 	@Condition attacker == null or attacker == victim
+	@Condition isGameInProgress()
 	currentTarget.clearStatusEffect(Status.BURNING)
 	currentTarget.stopForcingOutlineFor(getAllPlayers())
 	currentTarget = null
@@ -95,6 +106,7 @@ rule "BountyHunter::ProcessHuntedSelfKill":
 rule "BountyHunter::ResetStatus":
 	@Event eachPlayer
 	@Condition eventPlayer != currentTarget
+	@Condition isGameInProgress()
 	wait(0.25)
 	eventPlayer.clearStatusEffect(Status.BURNING)
 	eventPlayer.stopForcingOutlineFor(getAllPlayers())
