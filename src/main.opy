@@ -85,7 +85,8 @@ rule "BountyHunter::ProcessHunterScore":
 		attacker.setScore(attacker.getScore() + (cfgScoreOnKillTarget - cfgScoreOnKill))
 		currentTarget = attacker
 	else:
-		attacker.setScore(attacker.getScore() + cfgScoreOnKill)
+		if attacker != victim or (attacker != null and entityExists(attacker)):
+			attacker.setScore(attacker.getScore() + cfgScoreOnKill)
 
 rule "BountyHunter::ProcessHuntedKill":
 	@Event playerDied
@@ -101,6 +102,7 @@ rule "BountyHunter::ProcessHuntedSelfKill":
 	@Condition isGameInProgress()
 	currentTarget.clearStatusEffect(Status.BURNING)
 	currentTarget.stopForcingOutlineFor(getAllPlayers())
+	attacker.setScore(attacker.getScore() - cfgScoreOnKill)
 	currentTarget = null
 	
 rule "BountyHunter::ResetStatus":
