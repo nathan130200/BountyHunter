@@ -22,13 +22,14 @@ rule "gamemode overrides":
 rule "initialize gamemode":
 	@Event global
 	@Condition isGameInProgress()
+	# Reset old effects, texts, dummies and icons
 	destroyAllDummies()
 	destroyAllEffects()
 	destroyAllHudTexts()
 	destroyAllIcons()
 	wait()
 	
-	# Setup hud & icons
+	# Setup icons texts and effects
 	for iTargetsIndex in range(0, iNumTargets, 1):
 		makeIcon(iconFilter, Icon.DIZZY, currentTarget.getPosition() + vect(0, 0, 2), Color.RED)
 		makeText(defaultFilter, "{0} {1}".format(heroIcon(currentTarget.getCurrentHero()), currentTarget), HudPosition.TOP, Color.RED, evalOnce(1 + iTargetsIndex))
