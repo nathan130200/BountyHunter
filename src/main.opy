@@ -1,114 +1,50 @@
-globalvar cfgScoreOnKill
-globalvar cfgScoreOnKillTarget
-globalvar cfgGiveUltimateOnKillTarget
-globalvar cfgResetCooldownsOnKillTarget
-globalvar currentTarget
-globalvar currentTargetHudText
-globalvar currentTargetHudIcon
-globalvar currentTargetEffect
+#!include "macros.opy"
+#!include "variables.opy"
+#!extension buffStatusEffects
+#!extension debuffStatusEffects
 
-rule "BountyHunter::ProcessOptions":
-    cfgScoreOnKill = createWorkshopSetting(int[1:1000], "Bounty Hunter", "Score per kill", 100, 0)
-    cfgScoreOnKillTarget = createWorkshopSetting(int[1:1000], "Bounty Hunter", "Score per kill target", 300, 0)
-    cfgGiveUltimateOnKillTarget = createWorkshopSetting(bool, "Bounty Hunter", "Give ultimate charge when kill target.", true, 0)
-	cfgResetCooldownsOnKillTarget = createWorkshopSetting(bool, "Bounty Hunter", "Reset abilities cooldown when kill target.", false, 0)
+rule "configure global":
+    @Event global
+	config(iNumTargets, "Number of targets", int[1:3], 1)
+    config(iScoreKill, "Score per kill", int[1: 100], 100)
+    config(iScoreKillTarget, "Score per kill target", int[1:300], 300)
+    config(bGiveUltimate, "Give ultimate ability when kill target", bool, false)
+    config(bResetCooldown, "Reset ability cooldown when kill target", bool, false)
+    config(fGiveUltimateValue, "Give ultimate ability percent", float[1:100], 5)
 
-rule "BountyHunter::SetupGameModeOverrides":
-    @Condition isGameInProgress()
-    disableScoring()
+rule "gamemode overrides":
+	@Event global
+	@Condition isGameInProgress()
+	disableMusic()
+	disableAnnouncer()
+	disableScoring()
+
+rule "initialize gamemode":
+	@Event global
+	@Condition isGameInProgress()
+	destroyAllDummies()
+	destroyAllEffects()
+	destroyAllHudTexts()
+	destroyAllIcons()
+	wait()
 	
-rule "BountyHunter::SetupDummyForTesting":
-	@Disabled
-	@Event eachPlayer
-	@Condition hostPlayer == eventPlayer
-	@Condition hostPlayer.isHoldingButton(Button.INTERACT)
-	createDummy(hostPlayer.getCurrentHero(), Team.ALL, 11, hostPlayer.getPosition(), hostPlayer.getFacingDirection())
-	wait(0.25)
-	getPlayersInSlot(11, Team.ALL).startForcingButton(Button.PRIMARY_FIRE)
-	
-rule "BountyHunter::OnPlayerLeft":
+	# Setup hud & icons
+	for iTargetsIndex in range(0, iNumTargets, 1):
+		makeIcon(iconFilter, Icon.DIZZY, currentTarget.getPosition() + vect(0, 0, 2), Color.RED)
+		makeText(defaultFilter, "{0} {1}".format(heroIcon(currentTarget.getCurrentHero()), currentTarget), HudPosition.TOP, Color.RED, evalOnce(1 + iTargetsIndex))
+		wait()
+
+
+rule "player left":
 	@Event playerLeft
-	@Condition eventPlayer == currentTarget
-	bigMessage(getAllPlayers(), "Finding new target!")
-	currentTarget = null
+	@Condition isTarget(eventPlayer)
+	mTargets.remove(eventPlayer)
+	wait()
+	
+	if len(mTargets) == 0:
+		if len(getAllPlayers()) > 0:
+			mTargets.append(random.choice(random.shuffle(getAllPlayers())))
+		else:
+			declareDraw()
 
-rule "BountyHunter::SetupGameModeUserInterface":
-    @Condition isGameInProgress()
-    destroyHudText(currentTargetHudText)
-    destroyIcon(currentTargetHudIcon)
-    wait(0.25)
-    
-	#// Create offscren icon to indicate where target was in.
-    createIcon([player for player in getAllPlayers() if entityExists(currentTarget) and player != currentTarget],
-		updateEveryTick(currentTarget.getPosition()) + vect(0, 2.5, 0), Icon.SKULL, IconReeval.VISIBILITY_AND_POSITION, Color.RED, true)
-		
-    currentTargetHudIcon = getLastCreatedEntity()
-    wait(0.25)
 	
-	#// Create hud text to indicate who is current target.
-    hudHeader([player for player in getAllPlayers() if entityExists(currentTarget)],
-		"{0}: {1} {2}".format(l"Current Target", heroIcon(currentTarget.getCurrentHero()), currentTarget),
-			HudPosition.TOP, 1, Color.ORANGE, HudReeval.VISIBILITY_AND_STRING, SpecVisibility.ALWAYS)
-		
-    currentTargetHudText = getLastCreatedText()
-	wait(0.25)
-	
-	createEffect([player for player in getAllPlayers() if entityExists(currentTarget)], Effect.SPARKLES, Color.YELLOW,
-		updateEveryTick(currentTarget.getPosition()), 10, EffectReeval.VISIBILITY_POSITION_AND_RADIUS)
-	
-	currentTargetEffect = getLastCreatedEntity()
-	
-	
-rule "BountyHunter::ProcessHunterScore":
-	@Event playerDied
-	@Condition not entityExists(currentTarget) or attacker != currentTarget
-	@Condition attacker != victim
-	@Condition entityExists(attacker)
-	@Condition isGameInProgress()
-	
-	if not entityExists(currentTarget) or currentTarget == victim:
-		currentTarget = attacker
-		
-		if cfgGiveUltimateOnKillTarget:
-			attacker.setUltCharge(100)
-		
-		if cfgResetCooldownsOnKillTarget:
-			attacker.setAbilityCooldown(Button.ABILITY_1, 0)
-			attacker.setAbilityCooldown(Button.ABILITY_2, 0)
-		
-		attacker.setStatusEffect(null, Status.BURNING, 9999)
-		attacker.setScore(attacker.getScore() + cfgResetCooldownsOnKillTarget)
-		attacker.startForcingOutlineFor([x for x in getAllPlayers() if x != attacker], true, Color.AQUA, OutlineVisibility.ALWAYS)
-		attacker.setHealth(attacker.getMaxHealth() * 100)
-		
-		#// Workaround to prevent incrementing double of score. Since hunted event is dispatched at same time.
-		attacker.setScore(attacker.getScore() + (cfgScoreOnKillTarget - cfgScoreOnKill))
-		currentTarget = attacker
-	else:
-		if attacker != victim or (attacker != null and entityExists(attacker)):
-			attacker.setScore(attacker.getScore() + cfgScoreOnKill)
-
-rule "BountyHunter::ProcessHuntedKill":
-	@Event playerDied
-	@Condition attacker == currentTarget
-	@Condition entityExists(victim) or victim != null
-	@Condition isGameInProgress()
-	attacker.setScore(attacker.getScore() + cfgScoreOnKill)
-		
-rule "BountyHunter::ProcessHuntedSelfKill":
-	@Event playerDied
-	@Condition victim == currentTarget
-	@Condition attacker == null or attacker == victim
-	@Condition isGameInProgress()
-	currentTarget.clearStatusEffect(Status.BURNING)
-	currentTarget.stopForcingOutlineFor(getAllPlayers())
-	attacker.setScore(attacker.getScore() - cfgScoreOnKill)
-	currentTarget = null
-	
-rule "BountyHunter::ResetStatus":
-	@Event eachPlayer
-	@Condition eventPlayer != currentTarget
-	@Condition isGameInProgress()
-	wait(0.25)
-	eventPlayer.clearStatusEffect(Status.BURNING)
-	eventPlayer.stopForcingOutlineFor(getAllPlayers())
