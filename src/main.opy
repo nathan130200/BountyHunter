@@ -1,51 +1,95 @@
-#!include "macros.opy"
-#!include "variables.opy"
-#!extension buffStatusEffects
-#!extension debuffStatusEffects
+#!include "shared.opy"
+#!include "config.opy"
 
-rule "configure global":
+rule "BountyHunter::.Ctor":
     @Event global
-    config(iNumTargets, "Number of targets", int[1:3], 1)
-    config(iScoreKill, "Score per kill", int[1: 100], 100)
-    config(iScoreKillTarget, "Score per kill target", int[1:300], 300)
-    config(bGiveUltimate, "Give ultimate ability when kill target", bool, false)
-    config(bResetCooldown, "Reset ability cooldown when kill target", bool, false)
-    config(fGiveUltimateValue, "Give ultimate ability percent", float[1:100], 5)
-
-rule "gamemode overrides":
-    @Event global
-    @Condition isGameInProgress()
-    disableMusic()
-    disableAnnouncer()
     disableScoring()
 
-rule "initialize gamemode":
+rule "BountyHunter::SkipAssembleHeroes":
+    @Event global
+    @Condition isAssemblingHeroes()
+    setMatchTime(10)
+
+rule "BountyHunter::PreGame":
     @Event global
     @Condition isGameInProgress()
-    # Reset old effects, texts, dummies and icons
-    destroyAllDummies()
-    destroyAllEffects()
-    destroyAllHudTexts()
-    destroyAllIcons()
-    wait()
-    
-    # Setup icons texts and effects
-    for iTargetsIndex in range(0, iNumTargets, 1):
-        makeIcon(iconFilter, Icon.DIZZY, currentTarget.getPosition() + vect(0, 0, 2), Color.RED)
-        makeText(defaultFilter, "{0} {1}".format(heroIcon(currentTarget.getCurrentHero()), currentTarget), HudPosition.TOP, Color.RED, evalOnce(1 + iTargetsIndex))
-        wait()
+    @Condition not ready
+    bountyCount = getNumberOfPlayers(Team.ALL)
 
-
-rule "player left":
-    @Event playerLeft
-    @Condition isTarget(eventPlayer)
-    mTargets.remove(eventPlayer)
-    wait()
+    if bountyCount <= initialBountyCount:
+        bountyCount = round(bountyCount / initialBountyCount)
     
-    if len(mTargets) == 0:
-        if len(getAllPlayers()) > 0:
-            mTargets.append(random.choice(random.shuffle(getAllPlayers())))
-        else:
-            declareDraw()
-
+    if bountyCount == 0:
+        bountyCount = 1
     
+    if bountyCount == 1 and getNumberOfPlayers(Team.ALL) == 1:
+        printLog("Cannot setup gamemode. (reason='Not enough players')")
+        ready = false
+        wait(1)
+        goto RULE_START
+
+    ready = true
+
+# rule "BountyHunter::Init":
+#     @Event global
+#     @Condition isGameInProgress()
+#     @Condition ready
+
+rule "BountyHunter::ProcessScore(Mode=ESM_None,Type=EPR_None)":
+    @Event playerDealtFinalBlow
+    @Condition isGameInProgress()
+    @Condition isPlayer(attacker)
+    @Condition ready
+    
+    # Validate if victim is bounty or not, then increment score.
+    if isBounty(victim):
+        incrementScore(attacker, scorePerKillTarget)
+        destroyEffects(victim)
+    else:
+        incrementScore(attacker, scorePerKill)
+    
+    # Players become bounty now.
+    attacker.role = EPR_Bounty
+    
+    # Setup effects
+    setupEffects(attacker)
+
+rule "BountyHunter::ProcessScore(Mode=ESM_ASSISTENCE,Type=EPR_ALL)":
+    @Event playerEarnedElimination
+    @Condition isGameInProgress()
+    @Condition ready
+    if victim != null and victim != attacker:
+        attacker.addToScore(scorePerAssistence)
+
+rule "BountyHunter::ProcessScore(Mode=ESM_None,Type=EPR_Bounty)":
+    @Event playerDealtFinalBlow
+    @Condition isGameInProgress()
+    @Condition isBounty(attacker)
+    @Condition ready
+
+    attacker.addToScore(scorePerKill)
+    
+    if isBounty(victim):
+        victim.role = EPR_None
+        destroyEffects(victim)
+        
+rule "BountyHunter::ProcessDeath(Mode=EDM_None,Type=EPR_All)":
+    @Event playerDied
+    @Condition isGameInProgress()
+    @Condition ready
+    
+    if isBounty(victim):
+        victim.role = EPR_None
+        destroyEffects(victim)
+
+rule "BountyHunter::ProcessDeath(Mode=EDM_Self,Type=EPR_ALL)":
+    @Event playerDied
+    @Condition isGameInProgress()
+    @Condition ready
+    
+    if not entityExists(attacker) or attacker == victim:
+        victim.addToScore(-penaltyForSelfKill)
+    else: 
+        if attacker == null or eventWasEnvironment:
+            victim.addToScore(-penaltyForSelfKill)
+

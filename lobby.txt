@@ -1,0 +1,45 @@
+settings
+{
+	main
+	{
+		Description: "Bounty Hunter - An gamemode recreated from arcade in workshop version. Version: 2.0 / Created by: FRNathan13#1826 / Source Code: https://git.io/Jtr7t / Share Code: G1SFW"
+	}
+
+	lobby
+	{
+		Allow Players Who Are In Queue: Yes
+		Map Rotation: Paused
+		Match Voice Chat: Enabled
+		Max FFA Players: 10
+		Max Spectators: 5
+		Return To Lobby: Never
+		Swap Teams After Match: No
+	}
+
+	modes
+	{
+		Deathmatch
+		{
+			Game Length In Minutes: 6
+			Score To Win: 3500
+
+			enabled maps
+			{
+				Castillo
+			}
+		}
+	}
+
+	heroes
+	{
+		General
+		{
+			Health: 80%
+		}
+	}
+
+	workshop
+	{
+		Bounty Targets: 2
+	}
+}
